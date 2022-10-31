@@ -1,0 +1,108 @@
+SELECT location, date, total_cases, new_cases, total_deaths, population 
+FROM `covidproject-366815.covid.coviddata`
+ORDER BY 1,2;
+
+SELECT DISTINCT location
+FROM `covidproject-366815.covid.coviddata`
+ORDER BY location DESC;
+
+-- What is the percentage of deaths out of total daily cases?
+
+SELECT location, date, total_cases, total_deaths, (total_deaths/total_cases)*100 AS death_percentage
+FROM `covidproject-366815.covid.coviddata`
+WHERE location LIKE '%United Kingdom%'
+ORDER BY 2 DESC;
+
+-- What countries have the highest infection rate compared to population?
+
+SELECT location, population, MAX(total_cases) AS highest_infection_count, MAX((total_cases/population))*100 AS percentage_population_infected
+FROM `covidproject-366815.covid.coviddata`
+WHERE continent IS NOT NULL
+GROUP BY location, population
+ORDER BY 4 DESC;
+
+-- What are the countries with the highest death count?
+
+SELECT location, population, MAX(cast(total_deaths AS int)) as total_death_count
+FROM `covidproject-366815.covid.coviddata`
+WHERE continent IS NOT NULL
+GROUP BY location, population
+ORDER BY total_death_count DESC;
+
+-- Continents with highest death count?
+
+SELECT location, population, MAX(cast(total_deaths AS int)) as total_death_count
+FROM `covidproject-366815.covid.coviddata`
+WHERE continent IS NULL
+GROUP BY location, population
+ORDER BY total_death_count DESC;
+
+-- What are the daily total cases, deaths, and percentage of deaths per new cases across the world?
+
+SELECT 
+  date,
+  SUM(new_cases) AS daily_cases,
+  SUM(CAST(new_deaths AS int64)) AS daily_deaths,
+  SUM(CAST(new_deaths AS int64))/SUM(CAST(new_cases AS int64))*100 AS percentage_deaths
+FROM `covidproject-366815.covid.coviddata`
+WHERE continent IS NOT NULL
+GROUP BY date
+ORDER BY 1, 2;
+
+-- What is total number of vaccindations vs total population?
+
+SELECT dea.continent, dea.location, dea.Date, dea.population, vacs.new_vaccinations, SUM(CAST(vacs.new_vaccinations AS int64)) OVER (PARTITION BY dea.location, dea.Date) country_vacs_cumulative, 
+FROM `covidproject-366815.covid.coviddeaths`dea
+JOIN `covidproject-366815.covid.covidvaccinations`vacs
+  ON dea.location = vacs.location
+  AND dea.date = vacs.date
+WHERE dea.continent IS NOT NULL
+ORDER BY 1, 2, 3;
+
+-- Same as above query but using CTE to obtain  a column for cumulative vaccinations per country as a percentage of the relevant population 
+
+WITH PopsvsVac AS (
+  SELECT dea.continent, dea.location, dea.Date, dea.population, vacs.new_vaccinations, SUM(CAST(vacs.new_vaccinations AS int64)) OVER (PARTITION BY dea.location, dea.Date) country_vacs_cumulative, 
+  FROM `covidproject-366815.covid.coviddeaths`dea
+  JOIN `covidproject-366815.covid.covidvaccinations`vacs
+    ON dea.location = vacs.location
+    AND dea.date = vacs.date
+  WHERE dea.continent IS NOT NULL
+)
+SELECT *, country_vacs_cumulative/population*100 as cumulative_percentage_pop_vaccinated
+FROM PopsvsVac;
+
+-- Above query but with temp table.
+
+DROP TABLE IF EXISTS #PercentPopulationVaccinated
+CREATE TABLE #PercentPopulationVaccinated
+(
+  Continent nvarchar(255),
+  Location nvarchar(255),
+  Date datetime,
+  Population numeric,
+  New_vaccinations numeric,
+  RollingPeopleVaccinated numeric
+)
+ INSERT INTO #PercentPopulationVaccinated
+ SELECT dea.continent, dea.location, dea.Date, dea.population, vacs.new_vaccinations, SUM(CAST(vacs.new_vaccinations AS int64)) OVER (PARTITION BY dea.location, dea.Date) country_vacs_cumulative, 
+  FROM `covidproject-366815.covid.coviddeaths`dea
+  JOIN `covidproject-366815.covid.covidvaccinations`vacs
+    ON dea.location = vacs.location
+    AND dea.date = vacs.date
+  WHERE dea.continent IS NOT NULL
+
+SELECT *, country_vacs_cumulative/population*100 as cumulative_percentage_pop_vaccinated
+FROM #PercentPopulationVaccinated;
+
+-- Creating view to store for later visualisations
+
+CREATE VIEW PercentagePopulationVaccinated AS (
+   SELECT dea.continent, dea.location, dea.Date, dea.population, vacs.new_vaccinations, SUM(CAST(vacs.new_vaccinations AS int64)) OVER (PARTITION BY dea.location, dea.Date) country_vacs_cumulative, 
+  FROM `covidproject-366815.covid.coviddeaths`dea
+  JOIN `covidproject-366815.covid.covidvaccinations`vacs
+    ON dea.location = vacs.location
+    AND dea.date = vacs.date
+  WHERE dea.continent IS NOT NULL
+)
+
